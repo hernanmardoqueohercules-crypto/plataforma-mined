@@ -3,28 +3,28 @@ import React, { useState, useEffect } from 'react';
 interface SettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (bucketName: string) => void;
-    currentBucketName: string | null;
+    onSave: (folderId: string) => void;
+    currentFolderId: string | null;
 }
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, currentBucketName }) => {
-    const [bucketName, setBucketName] = useState('');
+const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, currentFolderId }) => {
+    const [folderId, setFolderId] = useState('');
     const [error, setError] = useState('');
 
     useEffect(() => {
         if (isOpen) {
-            setBucketName(currentBucketName || '');
+            setFolderId(currentFolderId || '');
             setError('');
         }
-    }, [isOpen, currentBucketName]);
+    }, [isOpen, currentFolderId]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!bucketName.trim()) {
-            setError('El nombre del bucket no puede estar vacío.');
+        if (!folderId.trim()) {
+            setError('El ID de la carpeta no puede estar vacío.');
             return;
         }
-        onSave(bucketName.trim());
+        onSave(folderId.trim());
         onClose();
     };
 
@@ -52,18 +52,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                      <div>
-                        <label htmlFor="bucket-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nombre del Bucket de Google Cloud Storage</label>
+                        <label htmlFor="folder-id" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            ID de Carpeta de Google Drive (Opcional)
+                        </label>
                         <input
                             type="text"
-                            id="bucket-name"
-                            value={bucketName}
-                            onChange={(e) => setBucketName(e.target.value)}
+                            id="folder-id"
+                            value={folderId}
+                            onChange={(e) => setFolderId(e.target.value)}
                             className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-900 dark:text-gray-100"
-                            placeholder="mi-bucket-de-almacenamiento"
+                            placeholder="1A2B3C4D5E6F7G8H9I0J"
                         />
                          {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
                          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                            Este es el nombre único de tu bucket en Google Cloud Storage donde se guardarán los archivos.
+                            <strong>Cómo obtener el ID de carpeta:</strong><br/>
+                            1. Abre la carpeta en Google Drive<br/>
+                            2. Copia el ID desde la URL: drive.google.com/drive/folders/<span className="font-mono bg-gray-200 dark:bg-gray-600 px-1">ID_AQUÍ</span><br/>
+                            3. Si lo dejas vacío, los archivos se subirán a "Mi unidad"
                          </p>
                     </div>
 

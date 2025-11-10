@@ -9,7 +9,6 @@ import AuthorizationLoader from './components/AuthorizationLoader';
 import SettingsModal from './components/SettingsModal';
 import { View, User, Theme, Resource, Breadcrumb } from './types';
 
-// Declara el objeto 'google' y 'gapi' en el scope global para TypeScript
 declare global {
   interface Window {
     google: any;
@@ -18,7 +17,6 @@ declare global {
   }
 }
 
-// Initial data moved here for central management
 const initialMonitoreoResources: Resource[] = [
     { id: 1, name: 'Reportes de Sistema', type: 'Carpeta', modified: '2024-07-28 10:00', modifiedBy: 'Admin', parentId: null },
     { id: 2, name: 'Log de Actividad Q2.pdf', type: 'PDF', modified: '2024-07-27 15:30', modifiedBy: 'Sistema', isProtected: true, parentId: null },
@@ -45,7 +43,6 @@ const initialCentrosResources: Resource[] = [
     { id: 6, name: 'Formularios de Inscripción.pdf', type: 'PDF', modified: '2024-07-24 15:20', modifiedBy: 'Roberto Díaz', parentId: 1 },
 ];
 
-
 const loadResourcesFromStorage = (key: string, initialData: Resource[]): Resource[] => {
     try {
         const storedData = localStorage.getItem(key);
@@ -64,8 +61,7 @@ const App: React.FC = () => {
   const [postLoginRedirectView, setPostLoginRedirectView] = useState<View | null>(null);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [gcsBucketName, setGcsBucketName] = useState<string | null>(() => localStorage.getItem('gcs_bucket_name'));
-
+  const [driveFolderId, setDriveFolderId] = useState<string | null>(() => localStorage.getItem('drive_folder_id'));
 
   const [monitoreoResources, setMonitoreoResources] = useState<Resource[]>(() => loadResourcesFromStorage('monitoreo_resources', initialMonitoreoResources));
   const [supervisionResources, setSupervisionResources] = useState<Resource[]>(() => loadResourcesFromStorage('supervision_resources', initialSupervisionResources));
@@ -84,7 +80,7 @@ const App: React.FC = () => {
   });
 
   const [gapiReady, setGapiReady] = useState(false);
-  const [storageAuthorized, setStorageAuthorized] = useState(false);
+  const [driveAuthorized, setDriveAuthorized] = useState(false);
   const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
@@ -100,18 +96,18 @@ const App: React.FC = () => {
     document.body.appendChild(script);
   }, []);
 
-  // Initialize GAPI client and request Storage scope
+  // Initialize GAPI client and request Drive scope
   const initializeGapiClient = useCallback(async () => {
     if (!gapiReady) return;
     try {
       return new Promise<void>((resolve, reject) => {
         window.tokenClient = window.google.accounts.oauth2.initTokenClient({
             client_id: process.env.GOOGLE_CLIENT_ID,
-            scope: 'https://www.googleapis.com/auth/devstorage.read_write',
+            scope: 'https://www.googleapis.com/auth/drive.file',
             callback: (tokenResponse: any) => {
               if (tokenResponse && tokenResponse.access_token) {
                 setAccessToken(tokenResponse.access_token);
-                setStorageAuthorized(true);
+                setDriveAuthorized(true);
                 resolve();
               } else {
                 reject(new Error("La respuesta del token de Google no fue válida."));
@@ -119,7 +115,7 @@ const App: React.FC = () => {
             },
             error_callback: (error: any) => {
                 console.error('Error de autorización de Google:', error);
-                reject(new Error("La autorización de Google Cloud Storage falló. Por favor, intenta de nuevo."));
+                reject(new Error("La autorización de Google Drive falló. Por favor, intenta de nuevo."));
             }
         });
         
@@ -131,7 +127,6 @@ const App: React.FC = () => {
     }
   }, [gapiReady]);
   
-
   useEffect(() => {
     const root = window.document.documentElement;
     if (theme === 'dark') {
@@ -157,9 +152,9 @@ const App: React.FC = () => {
     try {
       await initializeGapiClient();
     } catch (error) {
-      console.error("La autorización de Cloud Storage falló:", error);
+      console.error("La autorización de Drive falló:", error);
       alert(error instanceof Error ? error.message : "Ocurrió un error inesperado durante la autorización.");
-      handleLogout(); // Log out user if authorization fails
+      handleLogout();
     } finally {
         setIsAuthorizing(false);
     }
@@ -173,7 +168,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     if (window.google) window.google.accounts.id.disableAutoSelect();
     setUser(null);
-    setStorageAuthorized(false);
+    setDriveAuthorized(false);
     setAccessToken(null);
     if (activeView === 'monitoreo' || activeView === 'supervision') {
       setActiveView('centros-escolares');
@@ -192,38 +187,38 @@ const App: React.FC = () => {
     setSidebarOpen(false);
   };
 
-   const handleFileUpload = useCallback(async (file: File): Promise<string> => {
-        if (!storageAuthorized || !accessToken) {
-            throw new Error("La autorización de Google Cloud Storage es requerida.");
-        }
-        
-        const bucketName = gcsBucketName;
-        if (!bucketName) {
-            throw new Error("El nombre del bucket de Google Cloud Storage no está configurado. Ve a Ajustes (en el menú de tu perfil) para añadirlo.");
-        }
-        
-        // Sanitize file name to be URL-safe
-        const fileName = encodeURIComponent(file.name);
-        const uploadUrl = `https://storage.googleapis.com/upload/storage/v1/b/${bucketName}/o?uploadType=media&name=${fileName}`;
+  const handleFileUpload = useCallback(async (file: File): Promise<string> => {
+    if (!driveAuthorized || !accessToken) {
+        throw new Error("La autorización de Google Drive es requerida.");
+    }
+    
+    const metadata = {
+        name: file.name,
+        mimeType: file.type,
+        parents: driveFolderId ? [driveFolderId] : undefined
+    };
 
-        const response = await fetch(uploadUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': file.type || 'application/octet-stream',
-            },
-            body: file,
-        });
+    const formData = new FormData();
+    formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    formData.append('file', file);
 
-        if (!response.ok) {
-            const error = await response.json();
-            console.error('Error al subir a GCS:', error);
-            throw new Error(`Error al subir el archivo: ${error.error.message}`);
-        }
+    const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+        },
+        body: formData,
+    });
 
-        // Return the public URL of the uploaded file
-        return `https://storage.googleapis.com/${bucketName}/${fileName}`;
-    }, [storageAuthorized, accessToken, gcsBucketName]);
+    if (!response.ok) {
+        const error = await response.json();
+        console.error('Error al subir a Drive:', error);
+        throw new Error(`Error al subir el archivo: ${error.error?.message || 'Error desconocido'}`);
+    }
+
+    const result = await response.json();
+    return result.webViewLink || `https://drive.google.com/file/d/${result.id}/view`;
+  }, [driveAuthorized, accessToken, driveFolderId]);
   
   const handleSaveResource = (saveData: { resourceData: Omit<Resource, 'id' | 'modified' | 'modifiedBy'> & { id?: number } }) => {
     const { resourceData } = saveData;
@@ -298,11 +293,10 @@ const App: React.FC = () => {
       setBreadcrumbs(prev => ({ ...prev, [activeView]: buildBreadcrumbs(folderId) }));
   };
 
-  const handleSaveBucketName = (bucketName: string) => {
-    localStorage.setItem('gcs_bucket_name', bucketName);
-    setGcsBucketName(bucketName);
+  const handleSaveFolderId = (folderId: string) => {
+    localStorage.setItem('drive_folder_id', folderId);
+    setDriveFolderId(folderId);
   };
-
 
   const renderContent = () => {
     const getActiveResources = () => {
@@ -324,7 +318,7 @@ const App: React.FC = () => {
       onSave: handleSaveResource,
       onDelete: handleDeleteResource,
       onFileUpload: handleFileUpload,
-      isDriveAuthorized: storageAuthorized,
+      isDriveAuthorized: driveAuthorized,
       resources: filteredResources,
       allResourcesForView,
       breadcrumbs: breadcrumbs[activeView],
@@ -360,12 +354,12 @@ const App: React.FC = () => {
   return (
     <div className="flex h-screen bg-gray-100 dark:bg-gray-900 font-sans">
       {isLoginModalVisible && <LoginModal onLogin={handleLogin} onClose={() => setLoginModalVisible(false)} />}
-      {isAuthorizing && <AuthorizationLoader text="Autorizando acceso a Google Cloud..." />}
+      {isAuthorizing && <AuthorizationLoader text="Autorizando acceso a Google Drive..." />}
       <SettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
-        onSave={handleSaveBucketName}
-        currentBucketName={gcsBucketName}
+        onSave={handleSaveFolderId}
+        currentFolderId={driveFolderId}
       />
       <Sidebar 
         activeView={activeView} 
