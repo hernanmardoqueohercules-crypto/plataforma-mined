@@ -17,6 +17,9 @@ declare global {
   }
 }
 
+// ID de la carpeta principal en Google Drive (carpeta pública)
+const MAIN_DRIVE_FOLDER_ID = '1YBJiaHTov4yyxUqbXKZNFsKmhOj_6ys6';
+
 const initialMonitoreoResources: Resource[] = [
     { id: 1, name: 'Reportes de Sistema', type: 'Carpeta', modified: '2024-07-28 10:00', modifiedBy: 'Admin', parentId: null },
     { id: 2, name: 'Log de Actividad Q2.pdf', type: 'PDF', modified: '2024-07-27 15:30', modifiedBy: 'Sistema', isProtected: true, parentId: null },
@@ -61,7 +64,7 @@ const App: React.FC = () => {
   const [postLoginRedirectView, setPostLoginRedirectView] = useState<View | null>(null);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [driveFolderId, setDriveFolderId] = useState<string | null>(() => localStorage.getItem('drive_folder_id'));
+  const [driveFolderId, setDriveFolderId] = useState<string>(MAIN_DRIVE_FOLDER_ID);
 
   const [monitoreoResources, setMonitoreoResources] = useState<Resource[]>(() => loadResourcesFromStorage('monitoreo_resources', initialMonitoreoResources));
   const [supervisionResources, setSupervisionResources] = useState<Resource[]>(() => loadResourcesFromStorage('supervision_resources', initialSupervisionResources));
@@ -84,6 +87,9 @@ const App: React.FC = () => {
   const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
+  // Mapeo de carpetas de Drive por sección
+  const [sectionFolderIds, setSectionFolderIds] = useState<{[key in View]?: string}>({});
+
   // Load GAPI script
   useEffect(() => {
     const script = document.createElement('script');
@@ -96,36 +102,125 @@ const App: React.FC = () => {
     document.body.appendChild(script);
   }, []);
 
+  // Función para obtener o crear carpeta de sección en Drive
+  const getOrCreateSectionFolder = useCallback(async (sectionName: string, parentFolderId: string, token: string): Promise<string> => {
+    try {
+      // Buscar si ya existe la carpeta
+      const searchResponse = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=name='${sectionName}' and '${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id,name)`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      const searchData = await searchResponse.json();
+      
+      if (searchData.files && searchData.files.length > 0) {
+        return searchData.files[0].id;
+      }
+
+      // Si no existe, crear la carpeta
+      const createResponse = await fetch('https://www.googleapis.com/drive/v3/files', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: sectionName,
+          mimeType: 'application/vnd.google-apps.folder',
+          parents: [parentFolderId]
+        }),
+      });
+
+      const createData = await createResponse.json();
+      return createData.id;
+    } catch (error) {
+      console.error('Error al obtener/crear carpeta de sección:', error);
+      throw error;
+    }
+  }, []);
+
   // Initialize GAPI client and request Drive scope
   const initializeGapiClient = useCallback(async () => {
     if (!gapiReady) return;
+    
+    // Verificar si window.google está disponible
+    if (!window.google?.accounts?.oauth2) {
+      throw new Error("Google OAuth no está disponible. Por favor, recarga la página.");
+    }
+    
     try {
       return new Promise<void>((resolve, reject) => {
         window.tokenClient = window.google.accounts.oauth2.initTokenClient({
             client_id: process.env.GOOGLE_CLIENT_ID,
-            scope: 'https://www.googleapis.com/auth/drive.file',
-            callback: (tokenResponse: any) => {
+            scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
+            callback: async (tokenResponse: any) => {
               if (tokenResponse && tokenResponse.access_token) {
+                console.log('✅ Token de acceso obtenido');
                 setAccessToken(tokenResponse.access_token);
                 setDriveAuthorized(true);
+                
+                // Crear carpetas de sección
+                try {
+                  console.log('📁 Creando carpetas de sección...');
+                  const monitoreoFolderId = await getOrCreateSectionFolder('Monitoreo', MAIN_DRIVE_FOLDER_ID, tokenResponse.access_token);
+                  const supervisionFolderId = await getOrCreateSectionFolder('Supervisión', MAIN_DRIVE_FOLDER_ID, tokenResponse.access_token);
+                  const centrosFolderId = await getOrCreateSectionFolder('Centros Escolares', MAIN_DRIVE_FOLDER_ID, tokenResponse.access_token);
+                  
+                  setSectionFolderIds({
+                    'monitoreo': monitoreoFolderId,
+                    'supervision': supervisionFolderId,
+                    'centros-escolares': centrosFolderId,
+                  });
+                  console.log('✅ Carpetas creadas exitosamente');
+                } catch (error) {
+                  console.error('❌ Error al crear carpetas de sección:', error);
+                  alert('Las carpetas se crearon pero hubo un problema. Los archivos se subirán a la carpeta principal.');
+                }
+                
                 resolve();
+              } else if (tokenResponse && tokenResponse.error) {
+                // Usuario canceló o hubo un error específico
+                console.error('❌ Error en tokenResponse:', tokenResponse.error);
+                reject(new Error(`Error de autorización: ${tokenResponse.error}`));
               } else {
                 reject(new Error("La respuesta del token de Google no fue válida."));
               }
             },
             error_callback: (error: any) => {
-                console.error('Error de autorización de Google:', error);
-                reject(new Error("La autorización de Google Drive falló. Por favor, intenta de nuevo."));
+                console.error('❌ Error de autorización de Google:', error);
+                let errorMessage = "La autorización de Google Drive falló.";
+                
+                if (error.type === 'popup_closed') {
+                  errorMessage = "La ventana de autorización se cerró. Por favor, intenta de nuevo y permite pop-ups.";
+                } else if (error.type === 'popup_failed_to_open') {
+                  errorMessage = "No se pudo abrir la ventana de autorización. Por favor, permite pop-ups en tu navegador.";
+                }
+                
+                reject(new Error(errorMessage));
             }
         });
         
-        window.tokenClient.requestAccessToken({ prompt: '' });
+        // Solicitar el token con prompt para forzar la selección de cuenta
+        try {
+          window.tokenClient.requestAccessToken({ 
+            prompt: 'consent', // Forzar pantalla de consentimiento
+            hint: user?.email || '' // Sugerir el email del usuario logueado
+          });
+        } catch (error) {
+          console.error('❌ Error al solicitar token:', error);
+          reject(new Error("No se pudo iniciar el proceso de autorización. Verifica que los pop-ups estén permitidos."));
+        }
       });
 
     } catch (error) {
-      console.error('Error al inicializar el cliente GAPI:', error);
+      console.error('❌ Error al inicializar el cliente GAPI:', error);
+      throw error;
     }
-  }, [gapiReady]);
+  }, [gapiReady, getOrCreateSectionFolder, user]);
   
   useEffect(() => {
     const root = window.document.documentElement;
@@ -170,6 +265,7 @@ const App: React.FC = () => {
     setUser(null);
     setDriveAuthorized(false);
     setAccessToken(null);
+    setSectionFolderIds({});
     if (activeView === 'monitoreo' || activeView === 'supervision') {
       setActiveView('centros-escolares');
     }
@@ -192,10 +288,16 @@ const App: React.FC = () => {
         throw new Error("La autorización de Google Drive es requerida.");
     }
     
+    // Obtener la carpeta de sección correspondiente
+    const sectionFolderId = sectionFolderIds[activeView];
+    if (!sectionFolderId) {
+        throw new Error("No se pudo determinar la carpeta de destino.");
+    }
+    
     const metadata = {
         name: file.name,
         mimeType: file.type,
-        parents: driveFolderId ? [driveFolderId] : undefined
+        parents: [sectionFolderId] // Usar la carpeta de la sección actual
     };
 
     const formData = new FormData();
@@ -218,7 +320,7 @@ const App: React.FC = () => {
 
     const result = await response.json();
     return result.webViewLink || `https://drive.google.com/file/d/${result.id}/view`;
-  }, [driveAuthorized, accessToken, driveFolderId]);
+  }, [driveAuthorized, accessToken, sectionFolderIds, activeView]);
   
   const handleSaveResource = (saveData: { resourceData: Omit<Resource, 'id' | 'modified' | 'modifiedBy'> & { id?: number } }) => {
     const { resourceData } = saveData;
@@ -294,8 +396,9 @@ const App: React.FC = () => {
   };
 
   const handleSaveFolderId = (folderId: string) => {
-    localStorage.setItem('drive_folder_id', folderId);
-    setDriveFolderId(folderId);
+    // Esta función ya no es necesaria ya que usamos una carpeta fija
+    // pero la mantenemos para compatibilidad
+    console.log('Configuración de carpeta personalizada deshabilitada. Usando carpeta principal:', MAIN_DRIVE_FOLDER_ID);
   };
 
   const renderContent = () => {
@@ -389,5 +492,7 @@ const App: React.FC = () => {
     </div>
   );
 };
+
+export default App;
 
 export default App;
