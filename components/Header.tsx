@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User, Theme } from '../types';
+import { User, Theme, Notification } from '../types';
 
 interface HeaderProps {
     title: string;
@@ -10,6 +10,10 @@ interface HeaderProps {
     toggleTheme: () => void;
     onMenuClick: () => void;
     onSettingsClick: () => void;
+    notifications: Notification[];
+    onNotificationClick: () => void;
+    onMarkAllRead: () => void;
+    showNotifications: boolean;
 }
 
 const SunIcon = () => (
@@ -30,22 +34,54 @@ const MenuIcon = () => (
     </svg>
 );
 
+const formatTimestamp = (timestamp: string): string => {
+    const now = new Date();
+    const notifDate = new Date(timestamp);
+    const diffMs = now.getTime() - notifDate.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Ahora';
+    if (diffMins < 60) return `Hace ${diffMins} min`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `Hace ${diffHours} h`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `Hace ${diffDays} día${diffDays > 1 ? 's' : ''}`;
+};
 
-const Header: React.FC<HeaderProps> = ({ title, user, onLogout, onLoginClick, theme, toggleTheme, onMenuClick, onSettingsClick }) => {
+const Header: React.FC<HeaderProps> = ({ 
+    title, 
+    user, 
+    onLogout, 
+    onLoginClick, 
+    theme, 
+    toggleTheme, 
+    onMenuClick, 
+    onSettingsClick,
+    notifications,
+    onNotificationClick,
+    onMarkAllRead,
+    showNotifications
+}) => {
     const [isDropdownOpen, setDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const notificationRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setDropdownOpen(false);
             }
+            if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+                if (showNotifications) onNotificationClick();
+            }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, []);
+    }, [showNotifications, onNotificationClick]);
+
+    const unreadCount = notifications.filter(n => !n.read).length;
 
     return (
         <header className="flex items-center justify-between h-20 px-6 bg-white dark:bg-gray-800 border-b-2 border-gray-200 dark:border-gray-700 shadow-md flex-shrink-0">
@@ -67,13 +103,61 @@ const Header: React.FC<HeaderProps> = ({ title, user, onLogout, onLoginClick, th
                 >
                     {theme === 'light' ? <MoonIcon /> : <SunIcon />}
                 </button>
-                <button className="relative p-2 text-gray-500 dark:text-gray-400 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none transition-colors duration-200">
-                    <span className="absolute top-0 right-0 h-2 w-2 mt-1 mr-2 bg-red-500 rounded-full"></span>
-                    <span className="absolute top-0 right-0 h-2 w-2 mt-1 mr-2 bg-red-500 rounded-full animate-ping"></span>
-                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"></path>
-                    </svg>
-                </button>
+                
+                <div className="relative" ref={notificationRef}>
+                    <button 
+                        onClick={onNotificationClick}
+                        className="relative p-2 text-gray-500 dark:text-gray-400 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none transition-colors duration-200"
+                    >
+                        {unreadCount > 0 && (
+                            <>
+                                <span className="absolute top-0 right-0 h-2 w-2 mt-1 mr-2 bg-red-500 rounded-full"></span>
+                                <span className="absolute top-0 right-0 h-2 w-2 mt-1 mr-2 bg-red-500 rounded-full animate-ping"></span>
+                            </>
+                        )}
+                        <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"></path>
+                        </svg>
+                    </button>
+
+                    {showNotifications && (
+                        <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-700 rounded-md shadow-lg py-1 z-20 max-h-96 overflow-y-auto">
+                            <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-600 flex justify-between items-center">
+                                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                                    Notificaciones {unreadCount > 0 && `(${unreadCount})`}
+                                </h3>
+                                {unreadCount > 0 && (
+                                    <button 
+                                        onClick={onMarkAllRead}
+                                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                                    >
+                                        Marcar todas
+                                    </button>
+                                )}
+                            </div>
+                            {notifications.length === 0 ? (
+                                <div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                                    No hay notificaciones
+                                </div>
+                            ) : (
+                                notifications.map(notification => (
+                                    <div 
+                                        key={notification.id} 
+                                        className={`px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-600 border-b border-gray-100 dark:border-gray-600 last:border-b-0 ${!notification.read ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}
+                                    >
+                                        <p className="text-sm text-gray-700 dark:text-gray-200">
+                                            {notification.message}
+                                        </p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                            {formatTimestamp(notification.timestamp)}
+                                        </p>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    )}
+                </div>
+
                 {user ? (
                     <div className="relative" ref={dropdownRef}>
                         <button onClick={() => setDropdownOpen(!isDropdownOpen)} className="flex items-center focus:outline-none">

@@ -7,7 +7,7 @@ import CentrosEscolares from './pages/CentrosEscolares';
 import LoginModal from './pages/LoginModal';
 import AuthorizationLoader from './components/AuthorizationLoader';
 import SettingsModal from './components/SettingsModal';
-import { View, User, Theme, Resource, Breadcrumb } from './types';
+import { View, User, Theme, Resource, Breadcrumb, Notification } from './types';
 
 declare global {
   interface Window {
@@ -89,6 +89,10 @@ const App: React.FC = () => {
 
   // Mapeo de carpetas de Drive por sección
   const [sectionFolderIds, setSectionFolderIds] = useState<{[key in View]?: string}>({});
+
+  // Sistema de notificaciones
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // Load GAPI script
   useEffect(() => {
@@ -223,22 +227,34 @@ const App: React.FC = () => {
   }, [gapiReady, getOrCreateSectionFolder, user]);
   
   useEffect(() => {
-    const root = window.document.documentElement;
     if (theme === 'dark') {
-      root.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
+      document.documentElement.classList.add('dark');
     } else {
-      root.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
+      document.documentElement.classList.remove('dark');
     }
+    localStorage.setItem('theme', theme);
   }, [theme]);
 
   useEffect(() => { localStorage.setItem('monitoreo_resources', JSON.stringify(monitoreoResources)); }, [monitoreoResources]);
   useEffect(() => { localStorage.setItem('supervision_resources', JSON.stringify(supervisionResources)); }, [supervisionResources]);
   useEffect(() => { localStorage.setItem('centros_resources', JSON.stringify(centrosResources)); }, [centrosResources]);
 
-  const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : 'light');
+  const toggleTheme = () => {
+    setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
+  };
   const toggleSidebar = () => setSidebarOpen(!isSidebarOpen);
+
+  // Función para agregar notificación
+  const addNotification = useCallback((message: string, view: View) => {
+    const newNotification: Notification = {
+      id: Date.now(),
+      message,
+      view,
+      timestamp: new Date().toISOString(),
+      read: false,
+    };
+    setNotifications(prev => [newNotification, ...prev].slice(0, 50)); // Máximo 50 notificaciones
+  }, []);
 
   const handleLogin = async (googleUser: { name: string; email: string; picture: string; }) => {
     setUser(googleUser);
@@ -329,6 +345,7 @@ const App: React.FC = () => {
     const modifiedBy = user?.name || 'Usuario';
 
     const viewToUpdate = activeView;
+    const isNewResource = !resourceData.id;
 
     if (resourceData.id) {
       const updater = (resources: Resource[]) => resources.map(r => r.id === resourceData.id ? { ...r, ...resourceData, modified: formattedDate, modifiedBy } : r);
@@ -350,6 +367,18 @@ const App: React.FC = () => {
         case 'supervision': setSupervisionResources(prev => [...prev, newResource]); break;
         case 'centros-escolares': setCentrosResources(prev => [...prev, newResource]); break;
       }
+
+      // Crear notificación solo para nuevos recursos
+      const viewNames: {[key in View]: string} = {
+        'monitoreo': 'Monitoreo',
+        'supervision': 'Supervisión',
+        'centros-escolares': 'Centros Escolares'
+      };
+      const resourceTypeText = resourceData.type === 'Carpeta' ? 'carpeta' : 'documento';
+      addNotification(
+        `Nueva ${resourceTypeText} "${newResource.name}" agregada en ${viewNames[viewToUpdate]}`,
+        viewToUpdate
+      );
     }
   };
 
@@ -482,6 +511,10 @@ const App: React.FC = () => {
           toggleTheme={toggleTheme}
           onMenuClick={toggleSidebar}
           onSettingsClick={() => setSettingsModalOpen(true)}
+          notifications={notifications.filter(n => n.view === activeView)}
+          onNotificationClick={() => setShowNotifications(!showNotifications)}
+          onMarkAllRead={() => setNotifications(prev => prev.map(n => n.view === activeView ? {...n, read: true} : n))}
+          showNotifications={showNotifications}
         />
         <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-200 dark:bg-gray-800">
           <div className="container mx-auto px-6 py-8">

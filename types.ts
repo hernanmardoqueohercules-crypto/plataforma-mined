@@ -25,3 +25,11 @@ export type Breadcrumb = {
   id: number | null;
   name: string;
 };
+
+export type Notification = {
+  id: number;
+  message: string;
+  view: View;
+  timestamp: string;
+  read: boolean;
+};
