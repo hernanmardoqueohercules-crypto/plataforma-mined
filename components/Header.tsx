@@ -14,6 +14,8 @@ interface HeaderProps {
     onNotificationClick: () => void;
     onMarkAllRead: () => void;
     showNotifications: boolean;
+    driveAccountEmail: string | null;
+    driveFolderId: string;
 }
 
 const SunIcon = () => (
@@ -31,6 +33,23 @@ const MoonIcon = () => (
 const MenuIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+);
+
+const DriveIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 87.3 78" fill="none">
+        <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+        <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+        <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+        <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+        <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+        <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+    </svg>
+);
+
+const FolderIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
     </svg>
 );
 
@@ -60,7 +79,9 @@ const Header: React.FC<HeaderProps> = ({
     notifications,
     onNotificationClick,
     onMarkAllRead,
-    showNotifications
+    showNotifications,
+    driveAccountEmail,
+    driveFolderId
 }) => {
     const [isDropdownOpen, setDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -82,6 +103,7 @@ const Header: React.FC<HeaderProps> = ({
     }, [showNotifications, onNotificationClick]);
 
     const unreadCount = notifications.filter(n => !n.read).length;
+    const shortFolderId = driveFolderId.substring(0, 8) + '...';
 
     return (
         <header className="flex items-center justify-between h-20 px-6 bg-white dark:bg-gray-800 border-b-2 border-gray-200 dark:border-gray-700 shadow-md flex-shrink-0">
@@ -158,15 +180,39 @@ const Header: React.FC<HeaderProps> = ({
                     )}
                 </div>
 
-                {user ? (
+                {user && driveAccountEmail ? (
                     <div className="relative" ref={dropdownRef}>
-                        <button onClick={() => setDropdownOpen(!isDropdownOpen)} className="flex items-center focus:outline-none">
-                            <img className="h-10 w-10 rounded-full object-cover" src={user.picture} alt="Your avatar" />
-                            <span className="ml-3 text-gray-700 dark:text-gray-300 font-semibold hidden md:block">{user.name}</span>
+                        <button onClick={() => setDropdownOpen(!isDropdownOpen)} className="flex items-center space-x-2 focus:outline-none bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                            <DriveIcon />
+                            <div className="hidden md:flex flex-col items-start">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">Carpeta de Drive</span>
+                                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">{driveAccountEmail}</span>
+                            </div>
                         </button>
                         {isDropdownOpen && (
-                            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-700 rounded-md shadow-lg py-1 z-20">
-                                <a href="#" className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-indigo-500 hover:text-white">Mi Perfil</a>
+                            <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-700 rounded-md shadow-lg py-1 z-20">
+                                <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-600">
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold mb-2">Información de Almacenamiento</p>
+                                    <div className="flex items-center space-x-2 mb-2">
+                                        <DriveIcon />
+                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Google Drive</span>
+                                    </div>
+                                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
+                                        <strong>Cuenta:</strong> {driveAccountEmail}
+                                    </p>
+                                    <div className="flex items-center space-x-1 text-xs text-gray-600 dark:text-gray-400">
+                                        <FolderIcon />
+                                        <span><strong>ID:</strong> {shortFolderId}</span>
+                                    </div>
+                                </div>
+                                <a 
+                                    href={`https://drive.google.com/drive/folders/${driveFolderId}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-indigo-500 hover:text-white"
+                                >
+                                    🔗 Abrir en Drive
+                                </a>
                                 <button
                                     onClick={() => {
                                         onSettingsClick();
@@ -174,17 +220,25 @@ const Header: React.FC<HeaderProps> = ({
                                     }}
                                     className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-indigo-500 hover:text-white"
                                 >
-                                    Ajustes
+                                    ⚙️ Configuración
                                 </button>
+                                <div className="border-t border-gray-100 dark:border-gray-600"></div>
+                                <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800">
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Usuario del sistema:</p>
+                                    <div className="flex items-center space-x-2">
+                                        <img className="h-6 w-6 rounded-full object-cover" src={user.picture} alt={user.name} />
+                                        <span className="text-xs text-gray-600 dark:text-gray-300">{user.email}</span>
+                                    </div>
+                                </div>
                                 <div className="border-t border-gray-100 dark:border-gray-600"></div>
                                 <button
                                     onClick={() => {
                                         onLogout();
                                         setDropdownOpen(false);
                                     }}
-                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-indigo-500 hover:text-white"
+                                    className="block w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-500 hover:text-white"
                                 >
-                                    Cerrar Sesión
+                                    🚪 Cerrar Sesión
                                 </button>
                             </div>
                         )}
